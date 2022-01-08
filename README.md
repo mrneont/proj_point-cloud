@@ -9,8 +9,8 @@ Try running the `demo*.py` script.  The only library dependency for
 `lib*.py` is NumPy.  The demo includes the matplotlib and mpl_toolkits
 library, for visualization.
 
-Running the `demo*.py` script should produce an image like this:
-![fig_point-cloud_demo](https://user-images.githubusercontent.com/9322171/148624878-e7195257-e796-46c5-9d48-8de0db9ab108.png)
+Running the `demo*.py` script should produce an image like this: \
+![fig_point-cloud_demo](https://user-images.githubusercontent.com/9322171/148624878-e7195257-e796-46c5-9d48-8de0db9ab108.png) \
 ... where the initial point-cloud contains all the points, of which
 the blue ones were determine to be outliers (and the red ones are
 therefore the inliers).  The red and blue lines show the calculated
