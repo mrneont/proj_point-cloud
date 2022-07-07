@@ -15,7 +15,8 @@ import numpy as np
 #
 # ver = 1.0 (Nov 18, 2021)
 # ver = 2.0 (Nov 22, 2021)
-# ver = 3.0 (Jan  6, 2021)
+# ver = 3.0 (Jan  6, 2022)
+# ver = 3.1 (Mar 22, 2022)  introduce Malahanobis dist, for outlierizing
 # 
 # written by PA Taylor (SSCC, NIMH, NIH)
 # -----------------------------------------------------------------------
@@ -160,6 +161,7 @@ def calc_slope_int_pts(pts):
               estimated orthonormal basis (axes) for pts from the
               eigenvectors, called 'eig_axes' in other functions;
               this is the 'vh' output of np.linalg.svd()
+    COV     : (np.ndarray, 2D) covariance matrix of the points
     U       : (np.ndarray, 2D) array/matrix, shape = (N, N); prob not used;
               this is the 'u' output of np.linalg.svd()
     S       : (np.ndarray, 1D) array/matrix, len = N; prob not used;
@@ -173,10 +175,12 @@ def calc_slope_int_pts(pts):
     # then do SVD:  VH will be orthonormal basis (slopes) for points
     U, S, VH      = np.linalg.svd(pts_dem)
 
+    COV = np.cov(pts.T)
+
     for i in range(len(VH)):
         VH[i] = positivize_slope(VH[i])
 
-    return mean, VH, U, S
+    return mean, VH, COV, U, S
 
 # -----------------------------------------------------------------------
 
@@ -295,6 +299,29 @@ line/eigenvector of the point-cloud (given by mu and eig_axes).
                                                           line_idx)
 
     return pts_proj, pts_proj_dist
+
+def calc_mahalanobis_dist(pts, mu, cov):
+    """Do now Malahanobis packing.
+
+    """
+
+    N, dim = np.shape(pts)
+
+    Cinv = np.linalg.inv(cov)   # inv of cov mat
+    Pdem = pts - mu             # demeaned points
+
+    mdist = np.zeros(N)
+    for i in range(N):
+        mdist[i] = np.matmul(Pdem[i].T, np.matmul(Cinv, Pdem[i]))
+        if mdist[i] >= 0 :
+            mdist[i] = mdist[i]**0.5
+        else:
+            print("WARN: Mahalanobis distance will be imaginary for\n"
+                  "      point [{}].  Setting it to 0.".format(i))
+            mdist[i] = 0
+
+    return mdist
+
 
 
 # NB: This is a primary function here.
