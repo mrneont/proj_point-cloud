@@ -22,7 +22,7 @@ if __name__ == "__main__" :
 
     # ---------------- generate a point-cloud ----------------
     N   = 100
-    pts = lpc.make_test_pts(N, frac_out = 0.1)
+    pts = lpc.make_test_pts(N, frac_out = 0.1) #, scale=200, offset = (200, 200, 200))
 
     # ---------------- calc point-cloud outliers & axes ----------------
 
@@ -53,6 +53,11 @@ if __name__ == "__main__" :
         pts_in0, pts_in_bnd0 = lpc.calc_bnds_along_line(pts_in, mu_in, eig_axes_in, 0)
         pts_in1, pts_in_bnd1 = lpc.calc_bnds_along_line(pts_in, mu_in, eig_axes_in, 1)
         pts_in2, pts_in_bnd2 = lpc.calc_bnds_along_line(pts_in, mu_in, eig_axes_in, 2)
+
+        # calc tensor (for modeling spheroid)
+        D_in = lpc.calc_tensor_D(eig_axes_in, [pts_in_bnd0, pts_in_bnd1, pts_in_bnd2]) 
+        # ... and get strings for tcsh scripting with 3dcalc
+        s_coor_in, s_dij_in, s_calc_in = lpc.write_spheroid_form_for_3dcalc_tcsh(D_in, mu_in) 
     if Nout :
         # first need to calc mean+axes of this new point-cloud
         mu_out, eig_axes_out, cov, U, S = lpc.calc_slope_int_pts(pts_out)
