@@ -17,12 +17,15 @@ import numpy as np
 # ver = 2.0 (Nov 22, 2021)
 # ver = 3.0 (Jan  6, 2022)
 # ver = 3.1 (Mar 22, 2022)  introduce Malahanobis dist, for outlierizing
+# ver = 3.2 (Jul  7, 2022)  calc tensor from eig info and semi-axes,
+#                           and write a 3dcalc expression using this
 # 
 # written by PA Taylor (SSCC, NIMH, NIH)
 # -----------------------------------------------------------------------
 
 EPS = 1e-6
 BIG = 10e10
+TOL_SPH = 0.25   # tolerance for semi-radius asymmetry
 
 # these 3-vectors are used as references for determining what are
 # relatively "positive" and "negative" directions in different cases,
@@ -34,7 +37,164 @@ vec100 = np.array([1, 0, 0])
 # -----------------------------------------------------------------------
 # -----------------------------------------------------------------------
 
-def make_test_pts(N, D=3, frac_out=0.0, seed=5):
+def calc_tensor_D(mat_evec, list_eval_bnds, verb=0):
+    """Calculate the tensor D = E L E^T, where E is a matrix of
+    eigenvectors, and L is a matrix of associated eigenvalues.  In a
+    3D world then D, E and L are all 3x3 matrices, with L being
+    diagonal.  D will correspond to a spheroid surface in 3D here,
+    which approximately fits the input information, in good
+    cases---see next paragraph.  Combined with point-cloud center, we
+    could use this to draw a spheroid approximating point cloud spread.
+
+    NB: the evals aren't input directly, but instead list_eval_bnds
+    provides the boundaries of the to-be-spheroid (approximate
+    semi-axis lengths), from which the evals will be calc'ed.  These
+    aren't exact spheroids, so we check that the boundaries are
+    approximately symmetric for goodness of approximation.
+
+    NB: Each list_eval_bnds pair of points (see Parameters) could
+    conceivably come from calc_bnds_along_line(...).
+
+    Parameters
+    ----------
+    mat_evec  :(np.array, square) matrix of eigenvectors, likely 3x3
+    list_eval_bnds:(list of list of floats) list of pairs of floats,
+               more specifically.  In a 3D world, the outer list will
+               have 3 items, each a list of a pair of floats.  Each
+               pair represents the min/max distance along the
+               eigenvector that approximately describes a spheroid
+               semi-axis.  If the pairs had equal magnitudes, we could
+               make an exact spheroid; we check how different those
+               pairs are, to see about goodness of spheroid approx.
+
+    Return
+    ------
+    D         :(np.array, square) tensor that should approximate a spheroid
+               surface, likely 3x3.
+
+    """
+
+    npair = len(list_eval_bnds)
+    SH    = np.shape(mat_evec)
+
+    if SH[0] != SH[1] :
+        print("** ERROR: mat_evec must be a sq mat")
+        sys.exit(1)
+    if SH[0] != npair :
+        print("** ERROR: len(list_eval_bnds) must equal dim of mat_evec")
+        sys.exit(1)
+    if len(list_eval_bnds[0]) != 2 :  # just check [0]th and trust...
+        print("** ERROR: len(list_eval_bnds[i]) must be 2 for all i")
+        sys.exit(1)
+
+    lam = np.zeros((npair, npair))
+
+    for i in range(npair):
+        x = abs(list_eval_bnds[i][0])
+        y = abs(list_eval_bnds[i][1])
+        ave_len = 0.5*(x + y)
+        if not(ave_len) :
+            print("** ERROR: How can average magn of lengths be 0?")
+            sys.exit(1)
+        diff_len_rat = abs(x - y)/ave_len
+        if verb :
+            print("diff len for {:0.6f} and {0.6f} -> {0.6f}"
+                  "".format(x, y, diff_len_rat))
+
+        if diff_len_rat > TOL_SPH :
+            print("+* WARN: spheroidal approximation is not good here!")
+            print("   The semi-radii magns are {:0.6f} and {:0.6f},\n"
+                  "   meaning {:0.6f} ratio diff (> {} tolerance)"
+                  "".format(abs(list_eval_bnds[i][0]),
+                            abs(list_eval_bnds[i][1]), 
+                            diff_len_rat, TOL_SPH))
+        lam[i,i] = 1.0/(ave_len*ave_len)
+
+    M1 = np.matmul(mat_evec, lam)
+    D  = np.matmul(M1, mat_evec.T)
+
+    return D
+
+def write_spheroid_form_for_3dcalc_tcsh(D, mu):
+    """With a positive, (semi)definite tensor D and central point mu,
+    write a formula to be used in 3dcalc for creating an ROI that
+    represents this spheroid approximately, using tcsh syntax.
+
+    **NB: assume a 3D shape here, at least for now**
+
+    The form of spheroid-surface expression used here is:
+
+    C = Dxx*(x-x0)**2 + Dyy*(y-y0)**2 + Dzz*(z-z0)**2 + \
+        2*( Dxy*(x-x0)*(y-y0) + Dxz*(x-x0)*(z-z0) + Dyz*(y-y0)*(z-z0) )
+
+    ... used in the 3dcalc expression like:  "step(1-(Dxx*(x-x0)**2 .....))"
+
+    Parameters
+    ----------
+    D         :(np.array, square) positive, semidefinite tensor that
+               should approximate a spheroid surface, likely 3x3.
+
+    mu        :(np.array, Nx1) for N dimensional space, the point to be 
+               the spheroid center, like the (x0, y0, z0) in 3D
+
+    Return
+    ------
+    sss_coor  :(str) tcsh string expression for defining (x0, y0, z0), the
+               spheroid center
+    sss_dij   :(str) tcsh string expression for defining Dij, the tensor
+               components of the tensor
+    sss_calc  :(str) tcsh string expression for defining the expression
+               that should provide an ROI for the spheroid with center
+               and surface defined by previous two strings
+
+    """
+
+    N  = len(mu)
+    SH = np.shape(D)
+
+    if SH[0] != SH[1] :
+        print("** ERROR: D must be a sq mat")
+        sys.exit(1)
+    if SH[0] != N :
+        print("** ERROR: len(mu) must equal dim of D")
+        sys.exit(1)
+
+    coors = ['x', 'y', 'z']
+
+    # build coors
+
+    sss_coor = ''
+    for i in range(N):
+        sss_coor+= '''set {}0 = {:0.6f}'''.format( coors[i], mu[i] )
+        sss_coor+= '\n'
+
+    # build Dij , for UHT indices
+
+    sss_dij  = ''
+    for i in range(N):
+        for j in range(i, N):
+            sss_dij+= '''set D{}{} = {:0.6f}'''.format( coors[i], 
+                                                        coors[j], 
+                                                        D[i,j] )
+            sss_dij+= '\n'
+
+    # build 3dcalc expression string
+
+    sss_calc = '''"step(1-('''
+    for i in range(N):   # the diag parts
+        sss_calc+= '${{D{aa}{aa}}}*({aa}-${{{aa}0}})**2 + '.format(aa=coors[i])
+    for i in range(N-1):   # odd-diag parts
+        for j in range(i+1, N):
+            sss_calc+= '2*${{D{aa}{bb}}}*({aa}-${{{aa}0}})*({bb}-${{{bb}0}}) + '.format(aa=coors[i], bb = coors[j])
+    # remove last '+'
+    sss_calc = sss_calc[:-3]
+    sss_calc+= '''))"'''
+
+    return sss_coor, sss_dij, sss_calc
+
+# -----------------------------------------------------------------------
+
+def make_test_pts(N, D=3, frac_out=0.0, seed=5, scale=1.0, offset=None):
     """Make an example set of N points in D=3 dimensions (with a bit of
 directional asymmetric, so it isn't just a sphere, for interest).
 
@@ -48,6 +208,8 @@ directional asymmetric, so it isn't just a sphere, for interest).
                [0, 1].
     seed      :(int) set the seed for the new, fancy 'best practice' way
                of setting a RNG seed (it's local).
+    scale     :(float) make the scale of numbers bigger
+    offset    :(tuple of len=N) shift the coords by offset
 
     Return 
     ------
@@ -61,13 +223,21 @@ directional asymmetric, so it isn't just a sphere, for interest).
     B = 50+rng.random(N)
     C = np.zeros((N, D))
     for i in range(N):
-        C[i] = A[i]/B[i]
+        C[i] = scale*A[i]/B[i]
 
     # number of outliers to generate
     Nout = np.min([np.max([0, int(frac_out*N)]), N])
     if Nout :
         print("++ Generating outliers: {} / {} points".format(Nout, N))
         C[0:Nout,:]*= 1.05    # such cute, little outliers!
+
+    if offset != None:
+        if len(offset) != D:
+            print("** ERROR: len(offset) must be D")
+            sys.exit(1)
+        for i in range(N):
+            for j in range(D):
+                C[i, j]-= offset[j]
 
     return C
 
