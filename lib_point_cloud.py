@@ -19,6 +19,7 @@ import numpy as np
 # ver = 3.1 (Mar 22, 2022)  introduce Malahanobis dist, for outlierizing
 # ver = 3.2 (Jul  7, 2022)  calc tensor from eig info and semi-axes,
 #                           and write a 3dcalc expression using this
+# ver = 3.3 (Jul  8, 2022)  full 3dcalc command for spheroid, not just expr
 # 
 # written by PA Taylor (SSCC, NIMH, NIH)
 # -----------------------------------------------------------------------
@@ -180,15 +181,19 @@ def write_spheroid_form_for_3dcalc_tcsh(D, mu):
 
     # build 3dcalc expression string
 
-    sss_calc = '''"step(1-('''
+    sss_calc = """3dcalc -overwrite \\\n"""
+    sss_calc+= """    -a "${dset}"  \\\n"""
+    sss_calc+= """    -expr """
+    sss_calc+= '''"step(1-('''
     for i in range(N):   # the diag parts
         sss_calc+= '${{D{aa}{aa}}}*({aa}-${{{aa}0}})**2 + '.format(aa=coors[i])
     for i in range(N-1):   # odd-diag parts
         for j in range(i+1, N):
             sss_calc+= '2*${{D{aa}{bb}}}*({aa}-${{{aa}0}})*({bb}-${{{bb}0}}) + '.format(aa=coors[i], bb = coors[j])
-    # remove last '+'
-    sss_calc = sss_calc[:-3]
-    sss_calc+= '''))"'''
+    sss_calc = sss_calc[:-3]     # remove last '+'
+    sss_calc+= '''))" \\\n'''
+    sss_calc+= """    -prefix NEW_ROI.nii.gz"""
+    
 
     return sss_coor, sss_dij, sss_calc
 
