@@ -20,6 +20,7 @@ import numpy as np
 # ver = 3.2 (Jul  7, 2022)  calc tensor from eig info and semi-axes,
 #                           and write a 3dcalc expression using this
 # ver = 3.3 (Jul  8, 2022)  full 3dcalc command for spheroid, not just expr
+# ver = 3.4 (Jul 11, 2022)  make script with 3dcalc cmd
 # 
 # written by PA Taylor (SSCC, NIMH, NIH)
 # -----------------------------------------------------------------------
@@ -37,6 +38,66 @@ vec100 = np.array([1, 0, 0])
 
 # -----------------------------------------------------------------------
 # -----------------------------------------------------------------------
+
+def make_3dcalc_script(s_coor, s_dij, s_calc, 
+                       fname="script_for_spheroid.tcsh"):
+    """This function takes the s_* output strings from
+    write_spheroid_form_for_3dcalc_tcsh() and creates a 3dcalc script
+    that creates a spheroid ROI based on them.  So, this is built for
+    use with AFNI, but the formulation could be directly applied to
+    other software toolboxes.
+
+    If no new 'fname' is given, the script is written in the local
+    directory with the kwarg default.
+
+    """
+
+    # build script for 3dcalc to make ROI
+    scr_sph = "#!/bin/tcsh"
+    scr_sph+= "\n"
+    scr_sph+= """
+# This script makes a 3dcalc command to make a spheroidal ROI that
+# essentially covers the of point-cloud points (here, after outlier
+# rejection).
+#
+# NB: this spheroid is just an approximation; there will be warnings
+# from the Python code that created this script if it appears to be a
+# quite poor approximation.
+#
+# The (lengthy) 3dcalc expression embodies this spheroid formula (C=1):
+#   C = Dxx*(x-x0)**2 + Dyy*(y-y0)**2 + Dzz*(z-z0)**2 + \\
+#       2*( Dxy*(x-x0)*(y-y0) + Dxz*(x-x0)*(z-z0) + Dyz*(y-y0)*(z-z0) )
+#
+# NB: The user still needs to specify the relevant dset for setting
+# the grid here.
+#
+# ==================================================
+
+"""
+
+    scr_sph+= "# What dset defines the grid? (User provides)\n"
+    scr_sph+= "set dset = $1  # here, input from cmd line; or write explicitly"
+    scr_sph+= "\n\n"
+
+    scr_sph+= "# Define the coords spheroid center\n"
+    scr_sph+= s_coor
+    scr_sph+= "\n"
+
+    scr_sph+= "# Define the tensor components (that define the spheroid)\n"
+    scr_sph+= s_dij
+    scr_sph+= "\n"
+
+    scr_sph+= "# The 3dcalc command\n"
+    scr_sph+= s_calc
+    scr_sph+= "\n"
+
+    fff = open(fname, 'w')
+    fff.write(scr_sph)
+    fff.close()
+
+
+    return 0
+
 
 def calc_tensor_D(mat_evec, list_eval_bnds, verb=0):
     """Calculate the tensor D = E L E^T, where E is a matrix of

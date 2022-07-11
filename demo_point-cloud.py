@@ -58,6 +58,9 @@ if __name__ == "__main__" :
         D_in = lpc.calc_tensor_D(eig_axes_in, [pts_in_bnd0, pts_in_bnd1, pts_in_bnd2]) 
         # ... and get strings for tcsh scripting with 3dcalc
         s_coor_in, s_dij_in, s_calc_in = lpc.write_spheroid_form_for_3dcalc_tcsh(D_in, mu_in) 
+
+        is_ok = lpc.make_3dcalc_script(s_coor_in, s_dij_in, s_calc_in)
+
     if Nout :
         # first need to calc mean+axes of this new point-cloud
         mu_out, eig_axes_out, cov, U, S = lpc.calc_slope_int_pts(pts_out)
